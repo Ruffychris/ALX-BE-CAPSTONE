@@ -22,6 +22,13 @@ class TransactionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView
     queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
 
+class UserTransactionHistoryView(generics.ListAPIView):
+    serializer_class = TransactionSerializer
+
+    def get_queryset(self):
+        user_id = self.kwargs.get('user_id')
+        return Transaction.objects.filter(user_id=user_id).order_by('-checkout_date')
+
 @api_view(['POST'])
 def checkout_book(request):
     """

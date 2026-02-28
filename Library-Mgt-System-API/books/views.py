@@ -8,12 +8,12 @@ class BookListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        available = self.request.query_params.get('available')
+        available = self.request.query_params.get('available', 'true')
         title = self.request.query_params.get('title')
         author = self.request.query_params.get('author')
         isbn = self.request.query_params.get('isbn')
 
-        if available == 'true':
+        if available.lower() == 'true':
             queryset = queryset.filter(copies_available__gt=0)
         if title:
             queryset = queryset.filter(title__icontains=title)
