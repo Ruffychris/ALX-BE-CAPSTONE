@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 
 class Profile(models.Model):
@@ -18,7 +19,10 @@ class CustomUser(AbstractUser):
         ('admin', 'Admin'),
         ('member', 'Member'),
     )
+
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='member')
+
+    date_of_membership = models.DateTimeField(default=timezone.now)
 
     def is_admin(self):
         return self.role == 'admin'
