@@ -1,11 +1,15 @@
-from rest_framework import generics
-from rest_framework.decorators import api_view
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, generics
+from rest_framework.decorators import api_view
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.permissions import IsAuthenticated
 from books.models import Book
-from django.contrib.auth.models import User
+from users.models import CustomUser
 from .models import Transaction
 from .serializers import TransactionSerializer
+
 
 class TransactionListCreateView(generics.ListCreateAPIView):
     queryset = Transaction.objects.all()
@@ -18,66 +22,101 @@ class TransactionListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(user_id=user_id)
         return queryset
 
+
 class TransactionRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Transaction.objects.all()
     serializer_class = TransactionSerializer
+
 
 class UserTransactionHistoryView(generics.ListAPIView):
     serializer_class = TransactionSerializer
 
     def get_queryset(self):
         user_id = self.kwargs.get('user_id')
-        return Transaction.objects.filter(user_id=user_id).order_by('-checkout_date')
-
-@api_view(['POST'])
-def checkout_book(request):
-    """
-    Request data: {"user_id": 1, "book_id": 2}
-    """
-    user_id = request.data.get('user_id')
-    book_id = request.data.get('book_id')
-
-    try:
-        user = User.objects.get(pk=user_id)
-        book = Book.objects.get(pk=book_id)
-    except (User.DoesNotExist, Book.DoesNotExist):
-        return Response({"error": "User or Book not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    if book.copies_available < 1:
-        return Response({"error": "No copies available"}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check if user already has this book
-    if Transaction.objects.filter(user=user, book=book, is_returned=False).exists():
-        return Response({"error": "User already checked out this book"}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Create transaction
-    Transaction.objects.create(user=user, book=book)
-    book.copies_available -= 1
-    book.save()
-
-    return Response({"message": f"{book.title} checked out by {user.username}"}, status=status.HTTP_200_OK)
+        return Transaction.objects.filter(
+            user_id=user_id
+        ).order_by('-checkout_date')
 
 
-@api_view(['POST'])
-def return_book(request):
-    """
-    Request data: {"user_id": 1, "book_id": 2}
-    """
-    user_id = request.data.get('user_id')
-    book_id = request.data.get('book_id')
+class CheckoutBookView(APIView):
 
-    try:
-        transaction = Transaction.objects.get(user_id=user_id, book_id=book_id, is_returned=False)
-    except Transaction.DoesNotExist:
-        return Response({"error": "No active transaction found for this user and book"}, status=status.HTTP_404_NOT_FOUND)
+    permission_classes = [IsAuthenticated]
 
-    transaction.is_returned = True
-    transaction.return_date = timezone.now()
-    transaction.save()
+    def post(self, request, book_id, user_id):
 
-    # Increment book copies
-    book = transaction.book
-    book.copies_available += 1
-    book.save()
+        try:
+            user = CustomUser.objects.get(id=user_id)
+            book = Book.objects.get(id=book_id)
 
-    return Response({"message": f"{book.title} returned by {transaction.user.username}"}, status=status.HTTP_200_OK)
+            if Transaction.objects.filter(
+                user=user,
+                book=book,
+                is_returned=False
+            ).exists():
+                return Response(
+                    {"error": "User already has this book"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+
+            if book.copies_available < 1:
+                return Response(
+                    {"error": "No copies available"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+
+            transaction = Transaction.objects.create(
+                user=user,
+                book=book,
+                due_date=timezone.now() + timedelta(days=7)
+            )
+
+            book.copies_available -= 1
+            book.save()
+
+            return Response(
+                {
+                    "message": "Book checked out",
+                    "transaction_id": transaction.id
+                },
+                status=status.HTTP_201_CREATED
+            )
+
+        except CustomUser.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
+
+        except Book.DoesNotExist:
+            return Response({"error": "Book not found"}, status=404)
+
+
+class ReturnBookView(APIView):
+
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, transaction_id):
+
+        try:
+            transaction = Transaction.objects.get(id=transaction_id)
+
+            if transaction.is_returned:
+                return Response(
+                    {"error": "Book already returned"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            transaction.return_date = timezone.now()
+            transaction.is_returned = True
+            transaction.save()
+
+            book = transaction.book
+            book.copies_available += 1
+            book.save()
+
+            return Response(
+                {"message": "Book returned successfully"},
+                status=status.HTTP_200_OK
+            )
+
+        except Transaction.DoesNotExist:
+            return Response({"error": "Transaction not found"}, status=404)

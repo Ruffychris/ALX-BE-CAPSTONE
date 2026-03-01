@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.conf import settings
 
 
 class Book(models.Model):
@@ -15,12 +15,11 @@ class Book(models.Model):
 
 
 class Member(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    phone = models.CharField(max_length=20)
-    address = models.TextField(blank=True)
-
-    def __str__(self):
-        return self.user.username
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,  # <- use this
+        on_delete=models.CASCADE
+    )
+    membership_date = models.DateField()
 
 
 class Borrow(models.Model):
